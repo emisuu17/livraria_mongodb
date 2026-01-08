@@ -1,197 +1,91 @@
+import os
 from pymongo import MongoClient
 from bson.objectid import ObjectId
-import os
+from bson.decimal128 import Decimal128
+from decimal import Decimal
+from dotenv import load_dotenv
+import pymongo
 
-# ===========================
-# Configuração da conexão com o MongoDB Atlas
-# ===========================
+# Carrega as variáveis de ambiente
+load_dotenv()
 
-# Obtém a URI do MongoDB a partir das variáveis de ambiente
-MONGO_URI = os.environ.get('MONGO_URI')
+# Configuração da Conexão
+MONGO_URI = os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI)
-db = client.livraria  # nome do banco de dados
+db = client.livraria        # Seleciona o banco 'livraria'
+livros_collection = db.livros # Seleciona a coleção 'livros'
 
-# Coleções utilizadas no banco de dados
-livros = db.livros
-usuarios = db.usuarios
-pedidos = db.pedidos
-
-# ===========================
-# Classe Livro
-# ===========================
-
-class Livro:
+def buscar_livros(termo="", preco_min=None, preco_max=None, categoria=None, tags=None, pagina=1, itens_por_pagina=10):
     """
-    Classe que representa um livro na livraria.
+    Busca livros com filtros, ordenação e paginação.
     """
-    
-    def __init__(self, titulo, preco, categoria, tags, autores, mais_recente_edicao, numero_autores, data_publicacao, editora, descricao, isbn, estoque, imagem_capa):
-        """
-        Inicializa um objeto Livro com os atributos fornecidos.
-        """
-        self.titulo = titulo
-        self.preco = preco
-        self.categoria = categoria
-        self.tags = tags
-        self.autores = autores
-        self.mais_recente_edicao = mais_recente_edicao
-        self.numero_autores = numero_autores
-        self.data_publicacao = data_publicacao
-        self.editora = editora
-        self.descricao = descricao
-        self.isbn = isbn
-        self.estoque = estoque
-        self.imagem_capa = imagem_capa
+    query = {}
 
-    def salvar(self):
-        """
-        Salva o livro no banco de dados.
-        :return: ID do livro inserido.
-        """
-        # Todo
-        pass
+    # 1. Filtro por Texto titulo ou descrição usando REGEX
+    if termo:
+        regex = {"$regex": termo, "$options": "i"} # 'i' ignora maiúsculas ou minúsculas
+        query["$or"] = [
+            {"titulo": regex},
+            {"descricao": regex},
+            {"autores": regex},  
+            {"editora": regex},   
+            {"categoria": regex}
+        ]
 
-    @staticmethod
-    def buscar_por_id(id_livro):
-        """
-        Busca um livro pelo seu ID.
-        :param id_livro: ID do livro (string ou ObjectId)
-        :return: Dicionário com os dados do livro ou None.
-        """
-        # Todo
-        pass
+    # 2. Filtro por Preço conversão para Decimal128
+    if preco_min is not None or preco_max is not None:
+        query["preco"] = {}
+        if preco_min:
+            query["preco"]["$gte"] = Decimal128(Decimal(str(preco_min)))
+        if preco_max:
+            query["preco"]["$lte"] = Decimal128(Decimal(str(preco_max)))
 
-    @staticmethod
-    def buscar_todos():
-        """
-        Retorna todos os livros cadastrados.
-        :return: Lista de livros.
-        """
-        # Todo
-        pass
-    
-    @staticmethod
-    def buscar_livros(filtros=None, pagina=1, por_pagina=12):
-        """
-        Busca livros com filtros e paginação.
-        :param filtros: Dicionário de filtros para busca.
-        :param pagina: Número da página.
-        :param por_pagina: Quantidade de livros por página.
-        :return: (Lista de livros, total de livros encontrados)
-        """
-        # Todo
-        pass
+    # 3. Filtro por Categoria igualdade simples
+    if categoria:
+        query["categoria"] = categoria
 
-    @staticmethod
-    def categorias_disponiveis():
-        """
-        Retorna todas as categorias disponíveis no acervo.
-        :return: Lista de categorias.
-        """
-        # Todo
-        pass
+    # 4. Filtro por Tags Usando $all para garantir que tenha todas as tags
+    if tags:
+        # 'tags' vem como uma lista ['aventura', 'classico']
+        query["tags"] = {"$all": tags}
 
-    @staticmethod
-    def tags_disponiveis():
-        """
-        Retorna todas as categorias disponíveis no acervo.
-        :return: Lista de categorias.
-        """
-        # Todo
-        pass
+    # Lógica de Paginação
+    # calcula quantos documentos pular skip
+    pular = (pagina - 1) * itens_por_pagina
 
-class Usuario:
+    # Realiza a busca
+    # find() -> sort() -> skip() -> limit()
+    cursor = livros_collection.find(query) \
+        .sort("titulo", pymongo.ASCENDING) \
+        .skip(pular) \
+        .limit(itens_por_pagina)
+
+    # esrou contando o total de livros para saber quantas páginas existem
+    total_livros = livros_collection.count_documents(query)
+
+    return list(cursor), total_livros
+
+def buscar_livro_por_id(id_str):
     """
-    Classe que representa um usuário da livraria.
+    Busca um livro específico pelo seu _id.
     """
-    
-    def __init__(self, nome, email, senha):
-        """
-        Inicializa um objeto Usuario.
-        :param nome: Nome do usuário.
-        :param email: E-mail do usuário.
-        :param senha: Senha do usuário (deve ser criptografada antes de salvar!).
-        """
-        self.nome = nome
-        self.email = email
-        self.senha = senha  # Importante: criptografar antes de salvar!
+    try:
+        # converte a string recebida da URL para ObjectId
+        obj_id = ObjectId(id_str)
+        livro = livros_collection.find_one({"_id": obj_id}) #
+        return livro
+    except Exception as e:
+        print(f"Erro ao buscar ID: {e}")
+        return None
 
-    def salvar(self):
-        """
-        Salva o usuário no banco de dados.
-        :return: ID do usuário inserido.
-        """
-        # Todo
-        pass
-
-    @staticmethod
-    def buscar_por_email(email):
-        """
-        Busca um usuário pelo e-mail.
-        :param email: E-mail do usuário.
-        :return: Dicionário com os dados do usuário ou None.
-        """
-        # Todo
-        pass
-
-    @staticmethod
-    def buscar_por_id(id_usuario):
-        """
-        Busca um usuário pelo ID.
-        :param id_usuario: ID do usuário (string ou ObjectId).
-        :return: Dicionário com os dados do usuário ou None.
-        """
-        # Todo
-        pass
-
-# ===========================
-# Classe Pedido
-# ===========================
-
-class Pedido:
+def obter_categorias():
     """
-    Classe que representa um pedido realizado por um usuário.
+    Retorna uma lista de todas as categorias únicas no banco.
     """
-    
-    def __init__(self, id_usuario, livros, data, total, status="pendente"):
-        """
-        Inicializa um objeto Pedido.
-        :param id_usuario: ID do usuário que fez o pedido.
-        :param livros: Lista de dicionários contendo id_livro, quantidade e preço.
-        :param data: Data do pedido (ex: datetime.now()).
-        :param total: Valor total do pedido.
-        :param status: Status do pedido (default: "pendente").
-        """
-        self.id_usuario = id_usuario
-        self.livros = livros  # lista de dicionários com id_livro, quantidade, preco
-        self.data = data      # data do pedido (ex: datetime.now())
-        self.total = total
-        self.status = status
+    return livros_collection.distinct("categoria")
 
-    def salvar(self):
-        """
-        Salva o pedido no banco de dados.
-        :return: ID do pedido inserido.
-        """
-        # Todo
-        pass
-
-    @staticmethod
-    def buscar_por_usuario(id_usuario):
-        """
-        Busca todos os pedidos de um usuário.
-        :param id_usuario: ID do usuário.
-        :return: Lista de pedidos.
-        """
-        # Todo
-        pass
-
-    @staticmethod
-    def buscar_por_id(id_pedido):
-        """
-        Busca um pedido pelo seu ID.
-        :param id_pedido: ID do pedido (string ou ObjectId).
-        :return: Dicionário com os dados do pedido ou None.
-        """
-        # Todo
-        pass
+def obter_tags():
+    """
+    Retorna uma lista de todas as tags únicas no banco.
+    """
+    return livros_collection.distinct("tags")
