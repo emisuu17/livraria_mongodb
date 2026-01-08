@@ -23,12 +23,12 @@ def index():
     )
 
 @app.route('/livro/<id_livro>')
-def detalhe_livro(id_livro):
+def informacao_livro(id_livro):
     # Busca o livro específico
     livro = buscar_livro_por_id(id_livro)
     
     if not livro:
         return redirect(url_for('index'))
         
-    return render_template('detalhe.html', livro=livro)
+    return render_template('informacao.html', livro=livro)
 
